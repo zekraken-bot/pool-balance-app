@@ -1,56 +1,140 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 function App() {
   const [imbalanceConstraint, setImbalanceConstraint] = useState(35);
   const [numTokens, setNumTokens] = useState(3);
   const [medianValue, setMedianValue] = useState(21.67);
+  const [medianInput, setMedianInput] = useState("21.67");
 
-  // Helper functions (no changes)
-  const calculateMinMedian = (constraint, tokens) =>
-    (100 * (1 - constraint / 100)) / (tokens + 1);
-  const calculateOptimalDistribution = (constraint, tokens) => {
-    const minMedian = calculateMinMedian(constraint, tokens);
-    const values = new Array(tokens).fill(minMedian);
-    values[tokens - 1] = 100 - (tokens - 1) * minMedian;
-    return values;
+  // Custom balance calculator state
+  const [customBalances, setCustomBalances] = useState([
+    "33.33",
+    "33.33",
+    "33.34",
+  ]);
+
+  // Helper functions
+  const calculateMinMedian = (constraint, tokens) => {
+    return (100 - constraint) / tokens;
   };
+
+  const calculateMaxMedian = (constraint, tokens) => {
+    return (100 + constraint) / tokens;
+  };
+
   const calculateCurrentDistribution = (median, tokens) => {
     const values = new Array(tokens - 1).fill(median);
     const lastToken = 100 - (tokens - 1) * median;
     values.push(lastToken);
     return values.sort((a, b) => a - b);
   };
+
+  const calculateTokenBoundaries = (median, tokens, constraint) => {
+    if (tokens === 3) {
+      const minA = Math.max(0, (100 - median - constraint) / 2);
+      const maxC = Math.min(100, (100 - median + constraint) / 2);
+      return { minToken: minA, maxToken: maxC };
+    }
+    const dist = calculateCurrentDistribution(median, tokens);
+    return { minToken: Math.min(...dist), maxToken: Math.max(...dist) };
+  };
+
   const calculateImbalance = (values) => {
-    const sorted = [...values].sort((a, b) => a - b);
+    const numericValues = values.map((v) => parseFloat(v) || 0);
+    const sorted = [...numericValues].sort((a, b) => a - b);
     const median =
       sorted.length % 2 === 0
         ? (sorted[Math.floor(sorted.length / 2) - 1] +
             sorted[Math.floor(sorted.length / 2)]) /
           2
         : sorted[Math.floor(sorted.length / 2)];
-    const totalDiff = values.reduce(
+    const totalDiff = numericValues.reduce(
       (sum, val) => sum + Math.abs(val - median),
       0
     );
     return totalDiff / 100;
   };
 
+  // This runs ONLY when the constraints (imbalance or token count) change.
   useEffect(() => {
     const minMedian = calculateMinMedian(imbalanceConstraint, numTokens);
+    const maxMedian = calculateMaxMedian(imbalanceConstraint, numTokens);
+
     if (medianValue < minMedian) {
       setMedianValue(minMedian);
+      setMedianInput(minMedian.toFixed(2));
+    } else if (medianValue > maxMedian) {
+      setMedianValue(maxMedian);
+      setMedianInput(maxMedian.toFixed(2));
     }
   }, [imbalanceConstraint, numTokens, medianValue]);
+
+  // This runs ONLY when numTokens changes.
+  useEffect(() => {
+    // Create an array with the new number of tokens, evenly split.
+    const evenSplit = (100 / numTokens).toFixed(2);
+    const newBalances = Array(numTokens - 1).fill(evenSplit);
+
+    // Calculate the sum precisely and set the last token to the remainder.
+    const sumOfFirst = newBalances.reduce(
+      (acc, val) => acc + parseFloat(val),
+      0
+    );
+    newBalances.push((100 - sumOfFirst).toFixed(2));
+
+    setCustomBalances(newBalances);
+  }, [numTokens]);
+
+  // Handle median input submission
+  const handleMedianSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const value = parseFloat(medianInput);
+    if (!isNaN(value)) {
+      const minMedian = calculateMinMedian(imbalanceConstraint, numTokens);
+      const maxMedian = calculateMaxMedian(imbalanceConstraint, numTokens);
+      const clampedValue = Math.max(minMedian, Math.min(maxMedian, value));
+      setMedianValue(clampedValue);
+      setMedianInput(clampedValue.toFixed(2));
+    }
+  };
+
+  // Handle custom balance changes
+  const handleCustomBalanceChange = (index, value) => {
+    const newBalances = [...customBalances];
+    newBalances[index] = value;
+
+    // If it's not the last token, auto-calculate the last token
+    if (index < numTokens - 1) {
+      const sum = newBalances
+        .slice(0, -1)
+        .reduce((acc, val) => acc + parseFloat(val || 0), 0);
+      newBalances[numTokens - 1] = (100 - sum).toFixed(2);
+    }
+
+    setCustomBalances(newBalances);
+  };
 
   // Derived State
   const tokenValues = calculateCurrentDistribution(medianValue, numTokens);
   const minMedian = calculateMinMedian(imbalanceConstraint, numTokens);
-  const currentImbalance = calculateImbalance(tokenValues);
-  const isValidDistribution = currentImbalance <= imbalanceConstraint / 100;
-  const optimalDistribution = calculateOptimalDistribution(
-    imbalanceConstraint,
-    numTokens
+  const maxMedian = calculateMaxMedian(imbalanceConstraint, numTokens);
+  const currentImbalance = calculateImbalance(
+    tokenValues.map((v) => v.toString())
   );
+  const isValidDistribution = currentImbalance <= imbalanceConstraint / 100;
+
+  // Calculate token boundaries for the current median
+  const tokenBoundaries = calculateTokenBoundaries(
+    medianValue,
+    numTokens,
+    imbalanceConstraint
+  );
+
+  // Custom balance calculations
+  const customTokenValues = customBalances.map((val) => parseFloat(val) || 0);
+  const customImbalance = calculateImbalance(customBalances);
+  const customIsValid = customImbalance <= imbalanceConstraint / 100;
+  const customSum = customTokenValues.reduce((acc, val) => acc + val, 0);
 
   return (
     <div style={styles.container}>
@@ -125,6 +209,21 @@ function App() {
             font-size: 16px;
             transition: all 0.3s ease;
             outline: none;
+            box-sizing: border-box;
+          }
+
+          .submit-btn {
+            width: 100%;
+            padding: 10px 16px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 8px;
           }
 
           .input-field:focus {
@@ -135,6 +234,11 @@ function App() {
 
           .input-field::placeholder {
             color: rgba(255, 255, 255, 0.5);
+          }
+
+          .input-field option {
+            background: #1e293b;
+            color: white;
           }
 
           .progress-bar {
@@ -235,6 +339,26 @@ function App() {
             margin-bottom: 8px;
           }
 
+          .custom-balance-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            outline: none;
+            box-sizing: border-box;
+            text-align: center;
+          }
+
+          .custom-balance-input:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+            background: rgba(255, 255, 255, 0.15);
+          }
+
           .optimal-item:hover {
             background: rgba(255, 255, 255, 0.15);
             border-color: rgba(255, 255, 255, 0.3);
@@ -246,8 +370,7 @@ function App() {
       <div style={styles.content}>
         <div className="card fade-in-up" style={styles.mainCard}>
           <h1 style={styles.title}>
-            <span style={styles.emoji}>🎯</span>
-            Multi-Token Pool Balance Calculator
+            Multi-Token Surge Pool Balance Calculator
           </h1>
 
           {/* Input Section */}
@@ -284,27 +407,103 @@ function App() {
               <label style={styles.label}>Median Value (%)</label>
               <input
                 type="number"
-                value={medianValue.toFixed(2)}
-                onChange={(e) =>
-                  setMedianValue(parseFloat(e.target.value) || 0)
-                }
+                value={medianInput}
+                onChange={(e) => setMedianInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    handleMedianSubmit(e);
+                  }
+                }}
                 className="input-field"
-                min={minMedian.toFixed(2)}
-                max="50"
                 step="0.01"
+                placeholder="Enter median value"
               />
-              <p style={styles.helperText}>Min: {minMedian.toFixed(2)}%</p>
+              <button onClick={handleMedianSubmit} className="submit-btn">
+                Update
+              </button>
+              <p style={styles.helperText}>
+                Min: {minMedian.toFixed(2)}% | Max: {maxMedian.toFixed(2)}%
+              </p>
+            </div>
+
+            {/* Custom Balance Calculator */}
+            <div className="card" style={styles.customCard}>
+              <h3 style={styles.sectionTitle}>Custom Balance Calculator</h3>
+
+              <div className="balance-grid">
+                {customBalances.slice(0, numTokens).map((balance, index) => (
+                  <div key={index} style={styles.balanceInputGroup}>
+                    <label style={styles.balanceLabel}>
+                      Token {String.fromCharCode(65 + index)}
+                    </label>
+                    <input
+                      type="number"
+                      value={balance}
+                      onChange={(e) =>
+                        handleCustomBalanceChange(index, e.target.value)
+                      }
+                      className="custom-balance-input"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      disabled={index === numTokens - 1} // Last token is auto-calculated
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div style={styles.customResults}>
+                <div style={styles.customResultRow}>
+                  <span style={styles.customResultLabel}>Total: </span>
+                  <span
+                    style={{
+                      ...styles.customResultValue,
+                      color:
+                        Math.abs(customSum - 100) < 0.01
+                          ? "#86efac"
+                          : "#fca5a5",
+                    }}
+                  >
+                    {customSum.toFixed(2)}%
+                  </span>
+                </div>
+
+                <div style={styles.customResultRow}>
+                  <span style={styles.customResultLabel}>Imbalance: </span>
+                  <span
+                    style={{
+                      ...styles.customResultValue,
+                      color: customIsValid ? "#86efac" : "#fca5a5",
+                    }}
+                  >
+                    {(customImbalance * 100).toFixed(2)}%
+                  </span>
+                </div>
+
+                <div style={styles.customResultRow}>
+                  <span style={styles.customResultLabel}>Status: </span>
+                  <span
+                    style={{
+                      ...styles.customResultValue,
+                      color:
+                        customIsValid && Math.abs(customSum - 100) < 0.01
+                          ? "#86efac"
+                          : "#fca5a5",
+                    }}
+                  >
+                    {customIsValid && Math.abs(customSum - 100) < 0.01
+                      ? "✅ Valid"
+                      : Math.abs(customSum - 100) >= 0.01
+                      ? "❌ Total ≠ 100%"
+                      : `❌ Exceeds ${imbalanceConstraint}%`}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Results Section */}
           <div style={styles.metricsGrid}>
-            <div className="metric-card">
-              <div style={styles.metricLabel}>Minimum Median</div>
-              <div style={{ ...styles.metricValue, color: "#fcd34d" }}>
-                {minMedian.toFixed(2)}%
-              </div>
-            </div>
             <div className="metric-card">
               <div style={styles.metricLabel}>Current Imbalance</div>
               <div
@@ -317,90 +516,15 @@ function App() {
               </div>
             </div>
             <div className="metric-card">
-              <div style={styles.metricLabel}>Min Token</div>
+              <div style={styles.metricLabel}>Min Token Possible</div>
               <div style={{ ...styles.metricValue, color: "#7dd3fc" }}>
-                {Math.min(...tokenValues).toFixed(2)}%
+                {tokenBoundaries.minToken.toFixed(2)}%
               </div>
             </div>
             <div className="metric-card">
-              <div style={styles.metricLabel}>Max Token</div>
+              <div style={styles.metricLabel}>Max Token Possible</div>
               <div style={{ ...styles.metricValue, color: "#f0abfc" }}>
-                {Math.max(...tokenValues).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-
-          {/* Token Distribution Display */}
-          <div className="card" style={styles.distributionCard}>
-            <h3 style={styles.sectionTitle}>Current Token Distribution</h3>
-            <div style={styles.tokenGrid}>
-              {tokenValues.map((value, index) => (
-                <div key={index} className="token-card">
-                  <div style={styles.tokenLabel}>
-                    Token {String.fromCharCode(65 + index)}
-                  </div>
-                  <div style={styles.tokenValue}>{value.toFixed(2)}%</div>
-                  <div className="progress-bar" style={{ marginTop: "12px" }}>
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${value}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={styles.bottomGrid}>
-            <div className="card" style={styles.statusCard}>
-              <h3 style={styles.sectionTitle}>Status</h3>
-              <div
-                className={
-                  isValidDistribution ? "status-valid" : "status-invalid"
-                }
-                style={styles.statusContent}
-              >
-                <div style={styles.statusRow}>
-                  <span style={styles.statusIcon}>
-                    {isValidDistribution ? "✅" : "❌"}
-                  </span>
-                  <div>
-                    <div style={styles.statusTitle}>
-                      {isValidDistribution
-                        ? "Valid Distribution"
-                        : "Constraint Violated"}
-                    </div>
-                    <div style={styles.statusDesc}>
-                      {isValidDistribution
-                        ? "Pool meets imbalance constraint"
-                        : `Exceeds ${imbalanceConstraint}% constraint by ${(
-                            currentImbalance * 100 -
-                            imbalanceConstraint
-                          ).toFixed(2)}%`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card" style={styles.optimalCard}>
-              <h3 style={styles.sectionTitle}>Optimal Distribution</h3>
-              <div>
-                {optimalDistribution.map((value, index) => (
-                  <div key={index} className="optimal-item">
-                    <div style={styles.optimalRow}>
-                      <span style={styles.optimalToken}>
-                        Token {String.fromCharCode(65 + index)}
-                      </span>
-                      <span style={styles.optimalValue}>
-                        {value.toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                <div style={styles.optimalNote}>
-                  Achieves exactly {imbalanceConstraint}% imbalance
-                </div>
+                {tokenBoundaries.maxToken.toFixed(2)}%
               </div>
             </div>
           </div>
@@ -517,59 +641,48 @@ const styles = {
     color: "white",
     marginBottom: "12px",
   },
-  bottomGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
-    gap: "24px",
-  },
-  statusCard: {
+  customCard: {
     background: "rgba(255, 255, 255, 0.08)",
-    padding: "24px",
-  },
-  statusContent: {
     padding: "20px",
-    borderRadius: "16px",
   },
-  statusRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
-  statusIcon: {
-    fontSize: "2rem",
-  },
-  statusTitle: {
+  customTitle: {
+    fontSize: "1.3rem",
     fontWeight: "600",
     color: "white",
-    fontSize: "1.1rem",
-    marginBottom: "4px",
+    marginBottom: "16px",
+    textAlign: "center",
   },
-  statusDesc: {
-    color: "rgba(255, 255, 255, 0.7)",
-    fontSize: "0.9rem",
+  customResults: {
+    background: "rgba(255, 255, 255, 0.05)",
+    borderRadius: "8px",
+    padding: "12px",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    marginTop: "12px",
   },
-  optimalCard: {
-    background: "rgba(255, 255, 255, 0.08)",
-    padding: "24px",
-  },
-  optimalRow: {
+  customResultRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: "4px",
   },
-  optimalToken: {
+  customResultLabel: {
     color: "rgba(255, 255, 255, 0.8)",
+    fontSize: "0.85rem",
+    fontWeight: "500",
   },
-  optimalValue: {
-    fontWeight: "600",
-    color: "white",
-  },
-  optimalNote: {
-    textAlign: "center",
-    color: "rgba(255, 255, 255, 0.7)",
+  customResultValue: {
     fontSize: "0.9rem",
-    marginTop: "16px",
-    fontStyle: "italic",
+    fontWeight: "600",
+  },
+  balanceInputGroup: {
+    textAlign: "center",
+  },
+  balanceLabel: {
+    display: "block",
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: "0.8rem",
+    marginBottom: "6px",
+    fontWeight: "500",
   },
 };
 
