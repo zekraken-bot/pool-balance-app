@@ -15,10 +15,14 @@ function App() {
 
   // Helper functions
   const calculateMinMedian = (constraint, tokens) => {
+    // For 2 tokens, the median is always 50.
+    if (tokens === 2) return 50;
     return (100 - constraint) / tokens;
   };
 
   const calculateMaxMedian = (constraint, tokens) => {
+    // For 2 tokens, the median is always 50.
+    if (tokens === 2) return 50;
     return (100 + constraint) / tokens;
   };
 
@@ -30,6 +34,15 @@ function App() {
   };
 
   const calculateTokenBoundaries = (median, tokens, constraint) => {
+    // Special case for 2 tokens
+    if (tokens === 2) {
+      const minToken = 50 - constraint / 2;
+      const maxToken = 50 + constraint / 2;
+      return {
+        minToken: Math.max(0, minToken),
+        maxToken: Math.min(100, maxToken),
+      };
+    }
     if (tokens === 3) {
       const minA = Math.max(0, (100 - median - constraint) / 2);
       const maxC = Math.min(100, (100 - median + constraint) / 2);
@@ -41,18 +54,25 @@ function App() {
 
   const calculateImbalance = (values) => {
     const numericValues = values.map((v) => parseFloat(v) || 0);
-    const sorted = [...numericValues].sort((a, b) => a - b);
-    const median =
-      sorted.length % 2 === 0
-        ? (sorted[Math.floor(sorted.length / 2) - 1] +
-            sorted[Math.floor(sorted.length / 2)]) /
-          2
-        : sorted[Math.floor(sorted.length / 2)];
+    let median;
+    // For 2 tokens, the median is defined as 50.
+    if (numericValues.length === 2) {
+      median = 50;
+    } else {
+      const sorted = [...numericValues].sort((a, b) => a - b);
+      median =
+        sorted.length % 2 === 0
+          ? (sorted[Math.floor(sorted.length / 2) - 1] +
+              sorted[Math.floor(sorted.length / 2)]) /
+            2
+          : sorted[Math.floor(sorted.length / 2)];
+    }
+
     const totalDiff = numericValues.reduce(
       (sum, val) => sum + Math.abs(val - median),
       0
     );
-    return totalDiff / 100;
+    return totalDiff;
   };
 
   // This runs ONLY when the constraints (imbalance or token count) change.
@@ -71,6 +91,12 @@ function App() {
 
   // This runs ONLY when numTokens changes.
   useEffect(() => {
+    // If we switch to 2 tokens, the median is fixed at 50.
+    if (numTokens === 2) {
+      setMedianValue(50);
+      setMedianInput("50.00");
+    }
+
     // Create an array with the new number of tokens, evenly split.
     const evenSplit = (100 / numTokens).toFixed(2);
     const newBalances = Array(numTokens - 1).fill(evenSplit);
@@ -88,6 +114,9 @@ function App() {
   // Handle median input submission
   const handleMedianSubmit = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    // Do nothing if using 2 tokens, as the input is disabled.
+    if (numTokens === 2) return;
+
     const value = parseFloat(medianInput);
     if (!isNaN(value)) {
       const minMedian = calculateMinMedian(imbalanceConstraint, numTokens);
@@ -121,7 +150,7 @@ function App() {
   const currentImbalance = calculateImbalance(
     tokenValues.map((v) => v.toString())
   );
-  const isValidDistribution = currentImbalance <= imbalanceConstraint / 100;
+  const isValidDistribution = currentImbalance <= imbalanceConstraint;
 
   // Calculate token boundaries for the current median
   const tokenBoundaries = calculateTokenBoundaries(
@@ -133,13 +162,24 @@ function App() {
   // Custom balance calculations
   const customTokenValues = customBalances.map((val) => parseFloat(val) || 0);
   const customImbalance = calculateImbalance(customBalances);
-  const customIsValid = customImbalance <= imbalanceConstraint / 100;
+  const customIsValid = customImbalance <= imbalanceConstraint;
   const customSum = customTokenValues.reduce((acc, val) => acc + val, 0);
 
   return (
     <div style={styles.container}>
       <style>
         {`
+          .input-field:disabled {
+            background: rgba(0, 0, 0, 0.2);
+            cursor: not-allowed;
+            color: rgba(255, 255, 255, 0.4);
+          }
+
+          .submit-btn:disabled {
+            background: linear-gradient(135deg, #4b5563, #6b7280);
+            cursor: not-allowed;
+          }
+
           @keyframes fadeInUp {
             from {
               opacity: 0;
@@ -397,6 +437,7 @@ function App() {
                 onChange={(e) => setNumTokens(parseInt(e.target.value))}
                 className="input-field"
               >
+                <option value={2}>2 Tokens</option>
                 <option value={3}>3 Tokens</option>
                 <option value={4}>4 Tokens</option>
                 <option value={5}>5 Tokens</option>
@@ -404,7 +445,9 @@ function App() {
             </div>
 
             <div className="card card-interactive" style={styles.inputCard}>
-              <label style={styles.label}>Median Value (%)</label>
+              <label style={styles.label}>
+                {numTokens === 2 ? "Median (Fixed)" : "Median Value (%)"}
+              </label>
               <input
                 type="number"
                 value={medianInput}
@@ -417,8 +460,13 @@ function App() {
                 className="input-field"
                 step="0.01"
                 placeholder="Enter median value"
+                disabled={numTokens === 2}
               />
-              <button onClick={handleMedianSubmit} className="submit-btn">
+              <button
+                onClick={handleMedianSubmit}
+                className="submit-btn"
+                disabled={numTokens === 2}
+              >
                 Update
               </button>
               <p style={styles.helperText}>
@@ -476,7 +524,7 @@ function App() {
                       color: customIsValid ? "#86efac" : "#fca5a5",
                     }}
                   >
-                    {(customImbalance * 100).toFixed(2)}%
+                    {customImbalance.toFixed(2)}%
                   </span>
                 </div>
 
@@ -512,7 +560,7 @@ function App() {
                   color: isValidDistribution ? "#86efac" : "#fca5a5",
                 }}
               >
-                {(currentImbalance * 100).toFixed(2)}%
+                {currentImbalance.toFixed(2)}%
               </div>
             </div>
             <div className="metric-card">
